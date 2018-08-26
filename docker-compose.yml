@@ -1,0 +1,23 @@
+version: '3.7'
+services:
+  ubuntu:
+    build:
+      context: ./
+      dockerfile: Dockerfile.ubuntu
+    image: h4ck3rtools/ubertooth:2018-06-R1-ubuntu
+    command: bash
+    privileged: true
+    # Needed for x11 forwarding
+    network_mode: "host"
+    environment: 
+      # Needed for x11 forwarding
+      - DISPLAY=$DISPLAY
+      # Fixes running x11 app as root?
+      - QT_X11_NO_MITSHM=1
+      - XDG_RUNTIME_DIR=/tmp/runtime-root
+    devices:
+      - "/dev/bus/usb"
+    volumes:
+      # Both needed for x11 forwarding
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /root/.Xauthority:$XAUTHORITY

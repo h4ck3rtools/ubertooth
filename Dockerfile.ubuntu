@@ -1,0 +1,103 @@
+FROM ubuntu:18.04
+
+ENV DEBIAN_FRONTEND noninteractive
+
+RUN apt-get update
+
+# General build tools
+RUN apt-get install -y cmake make gcc g++ pkg-config build-essential git
+
+# Ubertooth firmware build needs
+RUN apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi
+
+# Ubertooth host tools build needs
+RUN apt-get install -y libusb-1.0-0-dev bluez python-bluez libbluetooth-dev
+
+# Install Ubertooth specan-ui deps
+RUN apt-get install -y python-numpy python-pyside python-qt4
+
+# Wireshark
+RUN apt-get install -y wireshark wireshark-dev libwireshark-dev
+
+# Kismat
+RUN apt-get install -y libpcap0.8-dev libcap-dev libnl-3-dev libncurses-dev libpcre3-dev libpcap-dev libcap-dev libnl-genl-3-dev
+
+# Fix for firmware compiling
+# https://github.com/greatscottgadgets/ubertooth/issues/306
+# http://www.markusz.io/posts/2018/04/27/ubuntu-debian-repo-pinning/
+RUN apt-get install -y software-properties-common debian-archive-keyring dirmngr
+RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 8B48AD6246925553
+RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 7638D0442B90D010
+RUN add-apt-repository "deb http://ftp.de.debian.org/debian sid main"
+RUN apt-get install -y gcc-arm-none-eabi=15:7-2018-q2-3
+
+WORKDIR /root
+
+RUN git clone https://github.com/greatscottgadgets/libbtbb.git
+RUN git clone https://github.com/greatscottgadgets/ubertooth.git
+RUN git clone https://github.com/kismetwireless/kismet.git
+RUN git clone https://www.kismetwireless.net/spectools.git
+
+# Build GSG libbtbb
+# https://github.com/greatscottgadgets/libbtbb
+WORKDIR /root/libbtbb
+RUN git fetch --tags
+RUN git checkout 2018-08-R1
+RUN mkdir build
+WORKDIR /root/libbtbb/build
+RUN cmake ..
+RUN make
+RUN make install
+
+# Required to load new binaries
+RUN ldconfig
+
+# Wireshark BTBB plugin
+WORKDIR /root/libbtbb/wireshark/plugins/btbb
+RUN mkdir build
+WORKDIR /root/libbtbb/wireshark/plugins/btbb/build
+RUN cmake -DCMAKE_INSTALL_LIBDIR=/usr/lib/x86_64-linux-gnu/wireshark/libwireshark3/plugins ..
+RUN make
+RUN make install
+
+# Wireshark BT BR/EDR plugin
+WORKDIR /root/libbtbb/wireshark/plugins/btbredr
+RUN mkdir build
+WORKDIR /root/libbtbb/wireshark/plugins/btbredr/build
+RUN cmake -DCMAKE_INSTALL_LIBDIR=/usr/lib/x86_64-linux-gnu/wireshark/libwireshark3/plugins ..
+RUN make
+RUN make install
+
+# Build GSG Ubertooth firmware and host tools
+WORKDIR /root/ubertooth
+RUN git fetch --tags
+RUN git checkout 2018-08-R1
+WORKDIR /root/ubertooth/firmware
+RUN make
+WORKDIR /root/ubertooth/host
+RUN mkdir build
+WORKDIR /root/ubertooth/host/build
+RUN cmake ..
+RUN make
+RUN make install
+
+# Build kismet
+WORKDIR /root/kismet
+RUN git fetch --tags
+RUN git checkout Kismet-2013-03-R1
+RUN ln -s ../ubertooth/host/kismet/plugin-ubertooth .
+RUN ./configure
+RUN make && make plugins
+RUN make suidinstall
+RUN make plugins-install
+
+WORKDIR /root/
+
+COPY scripts/upgrade.sh upgrade.sh
+COPY scripts/ubertooth-btle-wireshark.sh ubertooth-btle-wireshark.sh
+
+# Required to load new binaries
+RUN ldconfig
+
+RUN mkdir /tmp/runtime-root
+RUN chmod 0770 /tmp/runtime-root
